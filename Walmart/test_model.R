@@ -1,5 +1,6 @@
-library(glmnet)
+library(gbm)
 library(Matrix)
+library(lubridate)
 
 setwd("/Users/Pwyatt/Documents/GitHub/Kaggle/Walmart")
 train <- read.csv("train.csv")
@@ -7,6 +8,19 @@ test <- read.csv("test.csv")
 weather <- read.csv("weather.csv")
 keys <- read.csv("key.csv")
 samp <- read.csv("sampleSubmission.csv")
+
+weather$snowfall <- as.character(weather$snowfall)
+weather$snowfall[weather$snowfall=="T"] <- .01
+weather$preciptotal <- as.character(weather$preciptotal)
+weather$preciptotal[weather$preciptotal=="T"] <- .01
+weather$depart_missing <- 0
+weather$depart_missing[weather$depart=="M"] <- 1
+
+for(i in c(3:12,14:18,20)){
+  weather[,i] <- as.numeric(as.character(weather[,i]))
+  weather[is.na(weather[,i]),i] <- mean(weather[,i],na.rm=TRUE)
+}
+
 
 preds<-NULL
 for(item in unique(test$item_nbr)){
@@ -19,12 +33,8 @@ for(item in unique(test$item_nbr)){
   test_sub$units <- 0
 
   mdat <- rbind(train_sub,test_sub)
-  for(i in c(6:15,17:23)){
-    mdat[,i] <- as.numeric(as.character(mdat[,i]))
-    mdat[is.na(mdat[,i]),i] <- mean(mdat[,i],na.rm=TRUE)
-  }
-
-  modelMat <- model.matrix(units ~ . -1,mdat)
+  mdat$month <- factor(month(mdat$date))
+  modelMat <- model.matrix(units ~ .-date-1,mdat)
 
   trainMat <- modelMat[1:nrow(train_sub),]
   target <- train_sub$units
@@ -38,10 +48,10 @@ for(item in unique(test$item_nbr)){
   hist(target) #didn't know why I thought that'd be different
   hist(target[target>-2]) #more normalish
 
-  mod <- glmnet(trainMat, target, family="gaussian")
+  mod <- gbm.fit(trainMat, target, distribution = "gaussian")
 
   testMat <- modelMat[(nrow(train_sub)+1):nrow(modelMat),]
-  test_pred <- (exp(predict(mod,testMat))-.1)[,ncol(mod$beta)]
+  test_pred <- (exp(predict(mod,testMat,n.trees=100))-.1)
   test_pred[test_pred<0] <- 0
   test_pred <- cbind(test_pred, test_sub$store_nbr)
   test_pred <- data.frame(test_pred)
@@ -54,6 +64,6 @@ for(item in unique(test$item_nbr)){
 ids <- paste(preds$store_nbr,preds$item,preds$date,sep="_")
 sub <- data.frame(cbind(ids,preds$pred))
 colnames(sub) <- c("id","units")
-write.csv(sub,"sub.csv",row.names=FALSE)
+write.csv(sub,"sub_gbm_g.csv",row.names=FALSE)
 
 
