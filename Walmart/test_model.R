@@ -19,6 +19,17 @@ weather$preciptotal[weather$preciptotal=="T"] <- .004
 weather$depart_missing <- 0
 weather$depart_missing[weather$depart=="M"] <- 1
 
+#Change sunrise and sunset variables into minutes.
+#Create "daylight" variable
+weather$sunriseMins <- as.numeric(substr(weather$sunrise,1,2))*60 + 
+  as.numeric(substr(weather$sunrise,3,4)) 
+
+weather$sunsetMins <- as.numeric(substr(weather$sunset,1,2))*60 + 
+  as.numeric(substr(weather$sunset,3,4)) 
+
+weather$daylightMins <- weather$sunsetMins - weather$sunriseMins 
+
+
 #really shitty imputation; factor values get recoded as character and numeric, then the NA values (where there was a value that could not get encoed as numeric) get replaced by means
 for(i in c(3:12,14:18,20)){
   weather[,i] <- as.numeric(as.character(weather[,i]))
