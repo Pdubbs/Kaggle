@@ -16,7 +16,7 @@ for(i in c(3:12,14:18,20)){
 }
 
 weather$month <- factor(month(weather$date))
-weather$wday <- factorwday(weather$date) #weekend shopping spree!
+weather$wday <- factor(wday(weather$date)) #weekend shopping spree!
 
 
 ##Create "daylightMins" variable
