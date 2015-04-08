@@ -17,11 +17,12 @@ source("/Users/Pwyatt/Documents/GitHub/Kaggle/Walmart/weather_cleaning.R")
 #loop predictions item-by item because I'm working on a macbook air
 #hierarchical store-level effects should be included eventually
 preds<-NULL
+for(store in unique(test$store_nbr))
 for(item in unique(test$item_nbr)){
-  train_sub <- train[train$item_nbr==item,] #select the item
+  train_sub <- train[train$item_nbr==item & train$store_nbr == store,] #select the item
   train_sub <- merge(train_sub,keys) #merge keys to the training set so that I know what station matches up to a store
   train_sub <- merge(train_sub,weather) #merge weather into the set
-  test_sub <- test[test$item_nbr==item,] #same procedure with test
+  test_sub <- test[test$item_nbr==item & test$store_nbr == store,] #same procedure with test
   test_sub <- merge(test_sub,keys)
   test_sub <- merge(test_sub,weather)
   test_sub$units <- 0 #add units so I can stack them (so model matrix works right)
@@ -45,7 +46,8 @@ for(item in unique(test$item_nbr)){
   testMat <- modelMat[(nrow(train_sub)+1):nrow(modelMat),]
   test_pred <- (exp(predict(mod,testMat))-.1)
   print(paste("item:", item)) 
-  print(table(test_pred))
+  print(paste("store:", store))
+#  print(table(test_pred))
   test_pred[test_pred<0] <- 0
   test_pred <- cbind(test_pred, test_sub$store_nbr)
   test_pred <- data.frame(test_pred)

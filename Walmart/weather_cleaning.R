@@ -1,6 +1,7 @@
 library(lubridate)
 library(plyr)
 
+setwd("/Users/Pwyatt/Documents/GitHub/Kaggle/Walmart")
 weather <- read.csv("weather.csv")
 #recode trace amounts as a small number
 weather$snowfall <- as.character(weather$snowfall)
@@ -45,3 +46,4 @@ weather<-ddply(weather,.(date,station_nbr),mutate,
          )
 
 weather$nw_high[!is.finite(weather$nw_high)]<-mean(weather$nw_high[is.finite(weather$nw_high)],na.rm=TRUE)
+
