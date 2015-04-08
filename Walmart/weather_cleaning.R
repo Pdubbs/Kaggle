@@ -2,6 +2,7 @@ library(lubridate)
 library(plyr)
 library(data.table)
 
+setwd("/Users/Pwyatt/Documents/GitHub/Kaggle/Walmart")
 weather <- read.csv("weather.csv")
 #recode trace amounts as a small number
 weather$snowfall <- as.character(weather$snowfall)
@@ -123,3 +124,4 @@ setnames(weather,"VCFG","Vicinity_Fog")
 setnames(weather,"PRFG","Partial_Fog")
 setnames(weather,"BLSN","Blowing_Snow")
 setnames(weather,"GS","Small_Hail_or_Snow_Pellets")
+

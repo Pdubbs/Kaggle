@@ -26,4 +26,4 @@ LogLoss <- function(actual, predicted, eps=1e-15) {
 #grid<-expand.grid(n.trees=c(5,10),interaction.depth=c(1),shrinkage=.1)
 #model<-train(train[,grepl("feat",colnames(train))], train$target, method = "gbm", tuneGrid=grid)
 model<-gbm.fit(train[,grepl("feat",colnames(train))], train$target, distribution = "multinomial")
-
+preds<-predict(model,test,n.trees=100,type="prob")
