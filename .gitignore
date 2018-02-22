@@ -23,7 +23,6 @@
 # Logs and databases #
 ######################
 *.log
-*.sql
 *.sqlite
 *.csv
  
@@ -37,4 +36,7 @@
 ehthumbs.db
 Thumbs.db
 
-
+# Editor states and language datafiles #
+########################################
+.ipynb_checkpoints
+.RData
