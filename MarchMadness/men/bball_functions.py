@@ -1,12 +1,14 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import KFold
 from sklearn.metrics import log_loss
 from sklearn.metrics import r2_score
 from sklearn.utils import resample 
 
+#Compile deeper game stats and aggreate them to by team means and standard deviations
 def team_stats(df_all,trail=5):
     #Possessions
     df_all = df_all.loc[df_all.Season>=(df_all.Season.max()-trail)]
@@ -74,40 +76,52 @@ def seed_to_int(seed):
         s_int = int(seed[1:3])
         return s_int
 
+#take historical team level statistics and current seeding; combine into a dataset
 def build_data(df_base,df_seeds,team_stats):
     df_seeds['seed_int'] = df_seeds.Seed.apply(seed_to_int)
     df_seeds.drop(labels=['Seed'], inplace=True, axis=1) # This is the string label
+    df_seeds
 
     teams = tuple(team_stats.index)
-    df_base = df_base.loc[df_base.WTeamID.isin(teams)]
-    df_base = df_base.loc[df_base.LTeamID.isin(teams)]
+    df_base = df_base.loc[df_base.WTeamID.isin(teams),]
+    df_base = df_base.loc[df_base.LTeamID.isin(teams),]
     df_base['ScoreDiff'] = df_base.loc[:,'WScore']-df_base.loc[:,'LScore']
     df_base.drop(labels=['WScore','LScore'], inplace=True, axis=1)
-    
-    df_wins = df_seeds
-    df_wins = pd.merge(left=df_wins,right=team_stats,how='inner',left_on=['TeamID'],right_index=True)
+    df_wins = df_base.loc[:,['WTeamID','LTeamID','Season']]
+    df_wins = df_wins.reset_index().merge(df_seeds,how='left',left_on=['WTeamID','Season'],right_on=['TeamID','Season']).set_index('index')
+    df_wins.drop(labels=['TeamID'], inplace=True, axis=1)    
+    df_wins.loc[:,'seed_int'] = df_wins.apply(lambda row: row.seed_int if np.isfinite(row.seed_int) else 20, axis=1)
+    df_wins = df_wins.reset_index().merge(team_stats,how='inner',left_on=['WTeamID'],right_index=True).set_index('index')
     df_w_names = ['W'+i for i in df_wins.columns]
     df_wins.columns = df_w_names
-    df_losses = df_seeds
-    df_losses = pd.merge(left=df_losses,right=team_stats,how='inner',left_on=['TeamID'],right_index=True)
+
+    df_losses = df_base.loc[:,['WTeamID','LTeamID','Season']]
+    df_losses = df_losses.reset_index().merge(df_seeds,how='left',left_on=['LTeamID','Season'],right_on=['TeamID','Season']).set_index('index')
+    df_losses.drop(labels=['TeamID'], inplace=True, axis=1)    
+    df_losses.loc[:,'seed_int'] = df_losses.apply(lambda row: row.seed_int if np.isfinite(row.seed_int) else 20, axis=1)
+    df_losses = df_losses.reset_index().merge(team_stats,how='inner',left_on=['LTeamID'],right_index=True).set_index('index')
     df_l_names = ['L'+i for i in df_losses.columns]
     df_losses.columns = df_l_names
-    df_dummy = pd.merge(left=df_base, right=df_wins, how='left', left_on=['Season', 'WTeamID'],right_on=['WSeason','WTeamID'])
-    df_concat = pd.merge(left=df_dummy, right=df_losses, left_on=['Season', 'LTeamID'],right_on=['LSeason','LTeamID'])
+    
+    df_dummy = pd.merge(left=df_base, right=df_wins, how='left', left_index=True,right_index=True)
+    df_concat = pd.merge(left=df_dummy, how='left',right=df_losses, left_index=True,right_index=True)
+    df_concat['Seeded'] = df_concat.apply(lambda row: True if max(row.Wseed_int,row.Lseed_int) < 20 else False, axis=1)+0
     df_concat['SeedDiff'] = df_concat.Wseed_int - df_concat.Lseed_int
     for i in [x for x in team_stats.columns if '_mean' in x]:
         df_concat[i+'Diff'] = df_concat['W'+i]-df_concat['L'+i]
         df_concat.drop(labels=['W'+i,'L'+i],inplace=True,axis=1)
     for i in [x for x in team_stats.columns if '_std' in x]:
-        df_concat[i+'Avg'] = ((df_concat['W'+i]+df_concat['L'+i])/2).combine_first(df_concat['W'+i]).combine_first(df_concat['L'+i]).combine_first(df_concat['L'+i].isna()+0)
+    #    df_concat[i+'Avg'] = ((df_concat['W'+i]+df_concat['L'+i])/2).combine_first(df_concat['W'+i]).combine_first(df_concat['L'+i]).combine_first(df_concat['L'+i].isna()+0)
         df_concat.drop(labels=['W'+i,'L'+i],inplace=True,axis=1)
-    df_concat.drop(labels=['Season','WSeason','LSeason','Wseed_int','Lseed_int'],inplace=True,axis=1)
+    df_concat.drop(labels=['Season','WSeason','LSeason','Wseed_int','Lseed_int','WWTeamID','WLTeamID','LWTeamID','LLTeamID'],inplace=True,axis=1)
     
     df_predictions = df_concat
     df_predictions_inv = df_predictions*-1
+    df_predictions_inv.loc[:,'Seeded'] = df_predictions_inv.Seeded*-1
     df_predictions = pd.concat([df_predictions,df_predictions_inv],axis=0)
     return(df_predictions)
 
+#differently shaped output for final scoring
 def generate_output_df(df_sample_sub,dfs,df_teams_fin):
     n_test_games = len(df_sample_sub)
     df_seeds = dfs.copy()
@@ -135,6 +149,7 @@ def generate_output_df(df_sample_sub,dfs,df_teams_fin):
     output.columns = names
     
     output['SeedDiff'] = output.loc[:,'T1Seed']-output.loc[:,'T2Seed']
+    output['Seeded'] = 1
     output.drop(labels=['T1Seed','T2Seed'],inplace=True,axis=1)
     
     output_cut = output.loc[:,['year','Team1','Team2']]
@@ -155,11 +170,12 @@ def generate_output_df(df_sample_sub,dfs,df_teams_fin):
         output[i+'Diff'] = output[i+'1']-output[i+'2']
         output.drop(labels=[i+'1',i+'2'],inplace=True,axis=1)
     for i in [x for x in df_teams_fin.columns if '_std' in x]:
-        output[i+'Avg'] = ((output[i+'1']+output[i+'2'])/2).combine_first(output[i+'1']).combine_first(output[i+'2']).combine_first(output[i+'2'].isna()+0)
+    #    output[i+'Avg'] = ((output[i+'1']+output[i+'2'])/2).combine_first(output[i+'1']).combine_first(output[i+'2']).combine_first(output[i+'2'].isna()+0)
         output.drop(labels=[i+'1',i+'2'],inplace=True,axis=1)
     return(output)
 
-
+#we predict score differential because just looking at game outcome leaves a lot of info on the table
+#to get a probability estimate we do 1000 boostrap iterations and take the average outcome
 def bootstrap(dataset,mod_type='linear',iterations=1000,n_size=None):
     if(n_size is None):
         n_size = dataset.shape[0]
@@ -168,19 +184,23 @@ def bootstrap(dataset,mod_type='linear',iterations=1000,n_size=None):
     score2s = list()
     for i in range(iterations):
         train = resample(dataset, n_samples=n_size)
-        test = dataset[~dataset.index.isin(set(train.index))]
+        test = dataset.loc[~dataset.index.isin(set(train.index)),]
         
         train_x = train.iloc[:,3:]
-        train_y = train['ScoreDiff']
+        train_y = train.loc[:,'ScoreDiff']
 
         test_x = test.iloc[:,3:]
-        test_y = test['ScoreDiff']
+        test_y = test.loc[:,'ScoreDiff']
 
         if(mod_type=='linear'): 
+        	model = LinearRegression()
+        if(mod_type=='Ridge'): 
         	model = LinearRegression()
         elif(mod_type=='gbm'):
         	params = {'n_estimators': 500, 'max_depth': 4, 'min_samples_split': 2,'learning_rate': 0.01, 'loss': 'ls'}
         	model = GradientBoostingRegressor(**params)
+        else:
+        	ValueError("Need to use specified model type")
         model.fit(train_x, train_y)
         predictions = model.predict(test_x)
         results = [(x>0)+0 for x in predictions]
@@ -192,6 +212,7 @@ def bootstrap(dataset,mod_type='linear',iterations=1000,n_size=None):
         score2s.append(score2)
     return(models,scores,score2s)
 
+#for better testing of actual model functionality, we use prior seasons to score a "current one"
 def year_score(dfa,dfs,year,mod_type='linear',iterations=1000,n_size=None):
     df_teams_hist = team_stats(dfa.loc[dfa.Season<=(year-1)].copy())
     df_train_hist = build_data(dfa.loc[dfa.Season<=(year-1),['Season','WTeamID','LTeamID','WScore','LScore']].copy(),
@@ -201,7 +222,7 @@ def year_score(dfa,dfs,year,mod_type='linear',iterations=1000,n_size=None):
     
     df_teams_mod = team_stats(dfa.loc[dfa.Season<=year].copy())
     df_test_mod = build_data(dfa.loc[dfa.Season==year,['Season','WTeamID','LTeamID','WScore','LScore']].copy(),
-                                               dfs.loc[dfs.Season==year].copy(),
+                                               dfs.loc[dfs.Season==year,].copy(),
                                                df_teams_mod)
     
     predictions = np.vstack([m.predict(df_test_mod.iloc[:,3:]) for m in models])
