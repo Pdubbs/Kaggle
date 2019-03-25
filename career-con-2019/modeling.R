@@ -28,4 +28,12 @@ mod <- train(train_mod[,-1]
             ,metric = metric
             ,trControl = control
             ,tuneGrid = tunegrid
-            ,ntree=50)
+            ,ntree=500)
+
+test_mod <- test_x[,-1] %>%
+  group_by(series_id) %>%
+  summarise_all(list(~min(.), ~max(.), ~mean(.), ~sd(.)))
+sub <- sample_sub
+preds <- predict(mod,test_mod)
+sub$surface <- preds
+write.csv(sub,"submission.csv",row.names = FALSE)
